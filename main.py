@@ -52,6 +52,22 @@ def limitpos(coords):
 			# ~ incr= .000000000000001
 		# ~ opol[1]=(ipol[1]-90)//incr*incr + incr/2 + 90
 		return pol_to_car(opol)
+		
+def findcircleintersections(cir0,cir1):
+	#finds 0, 1, or 2 intersections between any 2 cirlces in the form of [cx,cy,r]
+	d=get_dis([cir0[0],cir0[1]],[cir1[0],cir1[1]])
+	if cir0[2]+cir1[2] < d or cir0[2]-cir1[2] > d or d==0: return [[]]
+	ux=(cir0[0]-cir1[0])/d
+	uy=(cir0[1]-cir1[1])/d
+	a=(cir0[2]**2-(cir1[2]**2)+(d**2))/d/-2
+	if a==cir0[2]:return [[a*ux+cir0[0],a*uy+cir0[1]]]
+	h=(cir0[2]**2-a**2)**.5
+	print(a,h,d)
+	out= [[a*ux-h*uy+cir0[0],a*uy+h*ux+cir0[1]],[a*ux+h*uy+cir0[0],a*uy-h*ux+cir0[1]]]
+	for p in out:
+		p[0]=abs(p[0])
+		p[1]=abs(p[1])
+	return out
 
 def find_closest_circles():
 	pass
@@ -173,6 +189,25 @@ class MenuCircle(Widget):
 			SmoothLine(circle=(c[0],c[1],r),width=3)
 		mi=MenuIcon(pos=pol_to_car([r,90]))
 		self.add_widget(mi)
+
+class Test(Widget):
+	#helper class to test functionality. remove from final disign
+	def __init__(self, **kwargs): #test findcircleintersections()
+		super(Test, self).__init__(**kwargs)
+		c1=[200,400,100]
+		c2=[200,300,200]
+		i=findcircleintersections(c1,c2)
+		with self.canvas:
+			Color(1,.5,.5)
+			SmoothLine(circle=(c1[0],c1[1],c1[2]),width=3)
+			Color(.5,1,.5)
+			SmoothLine(circle=(c2[0],c2[1],c2[2]),width=3)
+			if len(i[0])==0:return
+			print("i: ",i)
+			Color(.5,.5,1)
+			for point in i:
+				SmoothLine(circle=(point[0],point[1],5),width=3)
+			
 		
 class MagScreen(FloatLayout):
 	def __init__(self, **kwargs):
@@ -182,6 +217,8 @@ class MagScreen(FloatLayout):
 		self.size=Window.size
 		mc=MenuCircle()
 		self.add_widget(mc)
+		# ~ test=Test()
+		# ~ self.add_widget(test)
 		#make background with markers
 
 class Magiscript(App):
