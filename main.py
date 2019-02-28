@@ -10,6 +10,10 @@ from kivy.graphics.instructions import Instruction, InstructionGroup
 import math, random
 from kivy.config import Config
 
+buf=10
+c=[0,0]
+inuse=[]
+
 def get_dis(c1,c2):
 	#returns the distance between two points
 	return math.sqrt((c1[0]-c2[0])**2+(c1[1]-c2[1])**2)
@@ -56,24 +60,85 @@ def limitpos(coords):
 def findcircleintersections(cir0,cir1):
 	#finds 0, 1, or 2 intersections between any 2 cirlces in the form of [cx,cy,r]
 	d=get_dis([cir0[0],cir0[1]],[cir1[0],cir1[1]])
-	if cir0[2]+cir1[2] < d or cir0[2]-cir1[2] > d or d==0: return [[]]
+	if cir0[2]+cir1[2] < d or abs(cir0[2]-cir1[2]) > d or d==0: return [[]]
 	ux=(cir0[0]-cir1[0])/d
 	uy=(cir0[1]-cir1[1])/d
 	a=(cir0[2]**2-(cir1[2]**2)+(d**2))/d/-2
 	if a==cir0[2]:return [[a*ux+cir0[0],a*uy+cir0[1]]]
-	h=(cir0[2]**2-a**2)**.5
-	print(a,h,d)
+	h=math.sqrt(cir0[2]**2-a**2)
 	out= [[a*ux-h*uy+cir0[0],a*uy+h*ux+cir0[1]],[a*ux+h*uy+cir0[0],a*uy-h*ux+cir0[1]]]
-	for p in out:
-		p[0]=abs(p[0])
-		p[1]=abs(p[1])
 	return out
 
-def find_closest_circles():
-	pass
-
-def limitoverlap(coords):
-	pass
+def listofshapes(r):
+	#makes list of distinct shapes from inuse /w buffer for use finding free spaces
+	def ittrmf(l):
+		out=[]
+		while len(l)>0:
+			a=mergefront(l)
+			out.append(a[0])
+			l=a[1::]
+		return out
+		
+	def mergefront(l1):
+		print(l1)
+		#[[a][a][b][a][b][b][c]]->[[aa][b][a][b][b][c]]-...>[[aaa][bb][c]]
+		a=l1
+		l1=[]
+		while not a==l1:
+			l1=a
+			a=l1[0]
+			c=[]
+			for each in l1[1::]:
+				b=meldgroups(a,each)
+				a=b[0]
+				if len(b)>1: c.append(b[1])
+			a=[a]
+			for each in c:
+				a.append(each)
+		return a
+	
+	def meldgroups(l1,l2):
+		#takes two lists and returns them combined if they should be
+		m=0
+		ml1=l1
+		ml2=l2
+		for c1 in l1:
+			for c2 in l2:
+				o=intersects(c1,c2)
+				if o==1:
+					m=1
+				if o==-1:
+					m=1
+					ml1.remove(c1)
+				if o==-2:
+					m=1
+					ml2.remove(c2)
+				if 0==-3:
+					if c1==c2:
+						m=1
+						ml2.remove(c2)
+		if m==0: return [l1,l2]
+		for each in ml2:
+			ml1.append(each)
+		return[ml1]
+	
+	global inuse
+	global buf
+	l=[]
+	for each in inuse:
+		l.append([[each[0],each[1],r+buf+each[2]]])
+	return ittrmf(l)
+					
+		
+	
+def intersects(cir0,cir1):
+	#tests for intersections in two circles quickly
+	d=get_dis([cir0[0],cir0[1]],[cir1[0],cir1[1]])
+	if cir0[2]+cir1[2] < d:return 0#seperate circles
+	if cir1[2]-cir0[2] > d: return -1#the first is inside the second
+	if cir0[2]-cir1[2] > d: return -2#the second is inside the first
+	if cir0[2]-cir1[2] ==d: return -3#intersection at 1 point(or same circle)
+	return 1 #there is an intersection
 	
 class SelectionWindow(Widget):
 	#needs to allow input of variables
@@ -192,22 +257,22 @@ class MenuCircle(Widget):
 
 class Test(Widget):
 	#helper class to test functionality. remove from final disign
-	def __init__(self, **kwargs): #test findcircleintersections()
+	def __init__(self, **kwargs): #test listofshapes()
 		super(Test, self).__init__(**kwargs)
-		c1=[200,400,100]
-		c2=[200,300,200]
-		i=findcircleintersections(c1,c2)
+		global inuse
+		inuse=[[100,100,20],[150,300,100],[500,200,60],[150,150,20],[700,600,200]]
+		l=listofshapes(10)
 		with self.canvas:
-			Color(1,.5,.5)
-			SmoothLine(circle=(c1[0],c1[1],c1[2]),width=3)
-			Color(.5,1,.5)
-			SmoothLine(circle=(c2[0],c2[1],c2[2]),width=3)
-			if len(i[0])==0:return
-			print("i: ",i)
-			Color(.5,.5,1)
-			for point in i:
-				SmoothLine(circle=(point[0],point[1],5),width=3)
-			
+			Color(.3,.3,.3)
+			for each in inuse:
+				SmoothLine(circle=(each[0],each[1],each[2]),width=3)
+			i=0.0
+			for a in l:
+				Color(i,.5,.5)
+				i+=.5
+				for each in a:
+					Color(i,.5,.5)
+					SmoothLine(circle=(each[0],each[1],each[2]),width=1)
 		
 class MagScreen(FloatLayout):
 	def __init__(self, **kwargs):
