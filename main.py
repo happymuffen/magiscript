@@ -10,17 +10,17 @@ from kivy.graphics.instructions import Instruction, InstructionGroup
 import math, random
 from kivy.config import Config
 
-buf=10
-c=[0,0]
+buf=40
+c=Window.center
+ringi=90
 inuse=[]
 
 def get_dis(c1,c2):
 	#returns the distance between two points
 	return math.sqrt((c1[0]-c2[0])**2+(c1[1]-c2[1])**2)
 	
-def car_to_pol(car):
+def car_to_pol(car,c=c):
 	#gets polar coords relative to center from cartisian [r,t]
-	global c
 	dx=car[0]-c[0]
 	#can't divide by 0
 	if dx==0:
@@ -34,28 +34,10 @@ def car_to_pol(car):
 		pol[1]+=360
 	return pol
 
-def pol_to_car(pol):
+def pol_to_car(pol,c=c):
 	#gets cartisian coords to polar from center [x,y]
-	global c
 	car= [pol[0]*math.cos(math.radians(pol[1]))+c[0], pol[0]*math.sin(math.radians(pol[1]))+c[1]]
 	return car
-	
-def limitpos(coords):
-		#limits possible locations
-		
-		incr=80
-		ipol=car_to_pol(coords)
-		opol=ipol
-		# ~ opol[0]=(ipol[0])//incr*incr + incr/2
-		if opol[0]<100: opol[0]=100
-		
-		#trying to snap to angles too
-		# ~ incr=360/(5+(opol[0]-incr)/incr)
-		# ~ print(5+(opol[0]-incr)//incr)
-		# ~ if incr==0:
-			# ~ incr= .000000000000001
-		# ~ opol[1]=(ipol[1]-90)//incr*incr + incr/2 + 90
-		return pol_to_car(opol)
 		
 def findcircleintersections(cir0,cir1):
 	#finds 0, 1, or 2 intersections between any 2 cirlces in the form of [cx,cy,r]
@@ -70,66 +52,19 @@ def findcircleintersections(cir0,cir1):
 	return out
 
 def listofshapes(r):
-	#makes list of distinct shapes from inuse /w buffer for use finding free spaces
-	def ittrmf(l):
-		out=[]
-		while len(l)>0:
-			a=mergefront(l)
-			out.append(a[0])
-			l=a[1::]
-		return out
-		
-	def mergefront(l1):
-		print(l1)
-		#[[a][a][b][a][b][b][c]]->[[aa][b][a][b][b][c]]-...>[[aaa][bb][c]]
-		a=l1
-		l1=[]
-		while not a==l1:
-			l1=a
-			a=l1[0]
-			c=[]
-			for each in l1[1::]:
-				b=meldgroups(a,each)
-				a=b[0]
-				if len(b)>1: c.append(b[1])
-			a=[a]
-			for each in c:
-				a.append(each)
-		return a
-	
-	def meldgroups(l1,l2):
-		#takes two lists and returns them combined if they should be
-		m=0
-		ml1=l1
-		ml2=l2
-		for c1 in l1:
-			for c2 in l2:
-				o=intersects(c1,c2)
-				if o==1:
-					m=1
-				if o==-1:
-					m=1
-					ml1.remove(c1)
-				if o==-2:
-					m=1
-					ml2.remove(c2)
-				if 0==-3:
-					if c1==c2:
-						m=1
-						ml2.remove(c2)
-		if m==0: return [l1,l2]
-		for each in ml2:
-			ml1.append(each)
-		return[ml1]
 	
 	global inuse
 	global buf
 	l=[]
 	for each in inuse:
-		l.append([[each[0],each[1],r+buf+each[2]]])
-	return ittrmf(l)
+		l.append([each[0],each[1],r+buf+each[2]])
+	return l
 					
-		
+def makepoint(coords,canvas):
+	canvas.add(Color(1,0,0))
+	print(coords)
+	canvas.add(SmoothLine(circle=(coords[0],coords[1],2),width=3))
+	
 	
 def intersects(cir0,cir1):
 	#tests for intersections in two circles quickly
@@ -155,7 +90,47 @@ class ItemIcon(Widget):
 	#needs to open selection window
 	#needs to differentiate between movement comand and selection comand
 	#^ differentiate by time for click
-	pass
+	def __init__(self, **kwargs):
+		super(ItemIcon,self).__init__(**kwargs)
+		if kwargs is not None:
+			for key, value in kwargs.items():
+				if(key=='pos'): self.local_c=value
+		self.r=0
+		self.click=False
+	
+	def __del__(self):
+		try:
+			inuse.remove([self.local_c[0],self.local_c[1],self.r])
+		except ValueError:
+			pass
+		
+	def makeicon(self,r):
+		self.r=r
+		global inuse
+		inuse.append([self.local_c[0],self.local_c[1],self.r])
+		
+		self.canvas.clear()
+		self.icon=InstructionGroup()
+		self.icon.add(Color(.3,.3,.3))
+		self.icon.add(Color(1,1,1))
+		self.icon.add(Ellipse(size=(2*self.r,2*self.r),pos=(self.local_c[0]-self.r,self.local_c[1]-self.r)))
+		self.icon.add(SmoothLine(circle=(self.local_c[0],self.local_c[1],self.r+4),width=3))
+		self.icon.add(Color(.3,.3,.3))
+		self.icon.add(SmoothLine(circle=(self.local_c[0],self.local_c[1],self.r),width=3))
+		for group in [self.icon]:
+			self.canvas.add(group)	
+	
+	def on_touch_down(self,touch):
+		if get_dis(self.local_c,touch.pos) < self.r:
+			self.click=True
+			#test for click&drag
+	
+	def on_touch_move(self,touch):
+		if self.click:
+			a=MovingIcon(pos=touch.pos)
+			a.makeicon(self.r)
+			self.parent.add_widget(a)#adds moving icon to screen
+			self.parent.remove_widget(self)
 
 class MovingIcon(Widget):
 	#folows cursor while held
@@ -166,19 +141,25 @@ class MovingIcon(Widget):
 		global c
 		self.c=c
 		self.local_c=[0,0]
+		self.pointslist=[]
 		if kwargs is not None:
 			for key, value in kwargs.items():
 				if(key=='pos'): self.local_c=value
+	
+	def makepoint(self,coords):
+		self.pointslist.append(coords)
 		
 	def makeicon(self,r):
-		self.r=r*.9
+		self.l=listofshapes(r)
+		print(self.l)
+		self.r=r
 		self.updateloc(self.local_c)
 	
 	def updateloc(self, coords):
 		self.local_c=coords
 		self.canvas.clear()
 		self.icon=InstructionGroup()
-		self.canvas.opacity=.3
+		self.canvas.opacity=.2
 		self.icon.add(Color(.3,.3,.3))
 		
 		self.icon.add(Color(1,1,1))
@@ -188,22 +169,108 @@ class MovingIcon(Widget):
 		self.icon.add(SmoothLine(circle=(self.local_c[0],self.local_c[1],self.r),width=3))
 		for group in [self.icon]:
 			self.canvas.add(group)
+		
+		#handles makepoint
+		if len(self.pointslist)>0:
+			self.canvas.add(Color(.1,.1,.1))
+			for each in self.pointslist:
+				self.canvas.add(SmoothLine(circle=(each[0],each[1],5),width=1))
+			self.pointslist=[]
 			
 	def on_touch_move(self, touch):
-		l=limitpos(touch.pos)
+		l=self.limitpos(touch.pos)
 		self.updateloc(l)
+	
+	def limitpos(self,coords):
+		self.makepoint(coords)
+		#limits possible locations
 		
+		#if a valid ring is not near just return coords
+		#find closest location on that ring to coords
+		#if that spot is free return it
+		#find the intersections between the ring and what is occupying it
+		#if neither is near coords return coords
+		#check if the nearest intersection is free
+			#if it is return it
+			#if it isn't find whats blocking it and add it's farther intersection to the list
+		#jmp to checking if intersections are close enough	
+		
+		#snap if within 35
+		
+		#sort function for finding the shortest distance between coords
+		def sort_by_d(arr,coords):
+			if arr==[[]]: return []
+			def itersort_d(lh):
+				l=lh[0]
+				h=lh[1]
+				p=l
+				ldist=get_dis(arr[l],coords)
+				for i in range(l+1,h):
+					if get_dis(arr[i],coords)<ldist:
+						p+=1
+						arr[p],arr[i] = arr[i],arr[p]
+				arr[p], arr[l]= arr[l],arr[p]
+				return [l,p,h]
+			pars=[[0,len(arr)]]
+			while len(pars)>0:
+				newpars=[]
+				for each in pars:
+					o=itersort_d(each)
+					l,p,h=o[0],o[1],o[2]
+					if not p-l<=1:newpars.append([l,p])
+					if not h-p<=1:newpars.append([p+1,h])
+				pars=newpars
+			return arr
+		
+		ipol=car_to_pol(coords)
+		pr=self.parent.r
+		pc=self.parent.local_c
+		max_d=35
+		global ringi
+		ringn=(ipol[0]-pr+(ringi/2))//ringi
+		newr=pr+(ringn*ringi)
+		if abs(newr-ipol[0])>max_d: return coords
+		if newr<=pr:return coords
+		newcoords=pol_to_car([newr,ipol[1]])
+		cir=self.isbad(newcoords)
+		if cir==[]: return newcoords
+		interlist=findcircleintersections(cir,[pc[0],pc[1],newr])
+		interlist=sort_by_d(interlist,coords)
+		tmp=[]
+		counter=0
+		while counter<5:
+			for each in interlist:
+				b=False
+				if get_dis(each,coords)<max_d:
+					test=self.isbad(each)
+					if test==[]:return each
+					tl=findcircleintersections(test,[pc[0],pc[1],newr])
+					for t in tl:
+						for i in interlist:
+							if t==i: b=True
+						if b:break
+						tmp.append(t)
+					#update tmp
+			if tmp==[]: break
+			interlist=sort_by_d(tmp,coords)
+			tmp=[]		
+			counter+=1
+	
+		return coords
+	
 	def on_touch_up(self,touch):
-		print(self.isgood(touch.pos))
+		if self.isbad(self.local_c)==[]:
+			a=ItemIcon(pos=self.local_c)
+			a.makeicon(self.r)
+			self.parent.add_widget(a)
 		self.parent.remove_widget(self)
 	
-	def isgood(self, coords):
-		#change to findfree() find nerest avalible spot to cursor
-		global inuse
-		for cir in inuse:
-			if (get_dis([cir[0],cir[1]],coords) <= cir[2]+self.r+5):
-				return False
-		return True
+	def isbad(self, coords):
+		global buf
+		for cir in self.l:
+			if (get_dis([cir[0],cir[1]],coords) < cir[2]-1):
+				return cir
+		return []
 	
 	def findfree(self,coords):
 		pass
@@ -218,8 +285,6 @@ class MenuIcon(Widget):
 		if kwargs is not None:
 			for key, value in kwargs.items():
 				if(key=='pos'): self.local_c=value
-		global inuse
-		inuse.append([self.local_c[0],self.local_c[1],self.r])
 		self.icon=InstructionGroup()
 		self.icon.add(Color(1,1,1))
 		self.icon.add(Ellipse(size=(2*self.r,2*self.r),pos=(self.local_c[0]-self.r,self.local_c[1]-self.r)))
@@ -235,19 +300,20 @@ class MenuIcon(Widget):
 	def on_touch_down(self,touch):
 		if get_dis(self.local_c,touch.pos) < 40:
 			a=MovingIcon(pos=touch.pos)
-			a.makeicon(self.r)
-			self.add_widget(a)
+			a.makeicon(self.r*.8)
+			self.parent.add_widget(a)#adds moving icon to screen
 
 class MenuCircle(Widget):
 	#base of UI objects
 	def __init__(self, **kwargs):
 		super(MenuCircle, self).__init__(**kwargs)
 		global c
-		global inuse
-		r=100
-		inuse=[[c[0],c[1],r]]
+		self.icons=[]
+		self.connectors=[]
+		self.r=100
+		r=self.r
 		self.pos=[c[0]-r,c[1]-r]
-		local_c=c
+		self.local_c=c
 		options=["start_node", "time", "variables","flow control","network","I/O","Sound/Notifications", "Interface"]
 		with self.canvas:
 			Color(.3,.3,.3)
@@ -277,8 +343,6 @@ class Test(Widget):
 class MagScreen(FloatLayout):
 	def __init__(self, **kwargs):
 		super(MagScreen, self).__init__(**kwargs)
-		global c
-		c=Window.center
 		self.size=Window.size
 		mc=MenuCircle()
 		self.add_widget(mc)
