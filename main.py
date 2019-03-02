@@ -10,10 +10,10 @@ from kivy.graphics.instructions import Instruction, InstructionGroup
 import math, random
 from kivy.config import Config
 
-buf=40
 c=Window.center
-ringi=90
+ringi=110
 inuse=[]
+buf=(100+ringi)*math.pi/6
 
 def get_dis(c1,c2):
 	#returns the distance between two points
@@ -62,7 +62,6 @@ def listofshapes(r):
 					
 def makepoint(coords,canvas):
 	canvas.add(Color(1,0,0))
-	print(coords)
 	canvas.add(SmoothLine(circle=(coords[0],coords[1],2),width=3))
 	
 	
@@ -151,7 +150,6 @@ class MovingIcon(Widget):
 		
 	def makeicon(self,r):
 		self.l=listofshapes(r)
-		print(self.l)
 		self.r=r
 		self.updateloc(self.local_c)
 	
@@ -159,9 +157,7 @@ class MovingIcon(Widget):
 		self.local_c=coords
 		self.canvas.clear()
 		self.icon=InstructionGroup()
-		self.canvas.opacity=.2
-		self.icon.add(Color(.3,.3,.3))
-		
+		self.canvas.opacity=.2		
 		self.icon.add(Color(1,1,1))
 		self.icon.add(Ellipse(size=(2*self.r,2*self.r),pos=(self.local_c[0]-self.r,self.local_c[1]-self.r)))
 		self.icon.add(SmoothLine(circle=(self.local_c[0],self.local_c[1],self.r+4),width=3))
@@ -225,7 +221,7 @@ class MovingIcon(Widget):
 		ipol=car_to_pol(coords)
 		pr=self.parent.r
 		pc=self.parent.local_c
-		max_d=35
+		max_d=40
 		global ringi
 		ringn=(ipol[0]-pr+(ringi/2))//ringi
 		newr=pr+(ringn*ringi)
@@ -267,9 +263,18 @@ class MovingIcon(Widget):
 	
 	def isbad(self, coords):
 		global buf
+		r=get_dis(coords,self.c)
+		global ringi
+		ringn=(r-self.parent.r+(ringi/2))//ringi
+		newr=self.parent.r+(ringn*ringi)
+		if ringn==0: return [self.c[0],self.c[1],newr]
+		if abs(newr-r)>=10: return [self.c[0],self.c[1],newr]
 		for cir in self.l:
 			if (get_dis([cir[0],cir[1]],coords) < cir[2]-1):
-				return cir
+				cir_r=get_dis([cir[0],cir[1]],self.c)
+				if abs(cir_r-r)<10:
+					
+					return cir
 		return []
 	
 	def findfree(self,coords):
