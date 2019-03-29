@@ -7,13 +7,15 @@ from kivy.properties import NumericProperty, ReferenceListProperty,\
 from kivy.core.window import Window
 from kivy.graphics import Color, Ellipse, SmoothLine, Rectangle
 from kivy.graphics.instructions import Instruction, InstructionGroup
-import math, random
+import math, random, datetime
 from kivy.config import Config
 
 c=Window.center
 ringi=110
 inuse=[]
 buf=(100+ringi)*math.pi/6
+
+#add drawpercentage() to all visible classes for animating loading saves
 
 def get_dis(c1,c2):
 	#returns the distance between two points
@@ -80,9 +82,44 @@ class SelectionWindow(Widget):
 	pass
 	
 class Conector(Widget):
+	pass
+
+class MovingConector(Widget):
 	#needs to be able to path around items it isn't connected to
 	#needs to handle overlap
-	pass
+	def __init__(self, **kwargs):
+		super(MovingConector,self).__init__(**kwargs)
+		
+	def init(self,c1,r1):
+		self.c1,self.r1=c1,r1
+		self.canvas.opacity=.2		
+		
+	def draw(self,path):
+		self.canvas.clear()
+		for group in [path]:
+			self.canvas.add(group)	
+	
+	def on_touch_move(self,touch):
+		l=self.limitpos(touch.pos)
+		path=self.makepath(l)
+		self.draw(path)
+	
+	def on_touch_up(self,touch):
+		
+		self.parent.remove_widget(self)
+	
+	
+	
+	def limitpos(self,coords):
+		#should find snap location for coords
+		return coords
+	
+	def makepath(self,coords):
+		#returns InstructionGroup containing all relevent things to draw.
+		todraw=InstructionGroup()
+		todraw.add(SmoothLine(points=[self.c1[0],self.c1[1],coords[0],coords[1]],cap='round', joint='round', width=3))
+		return todraw
+			
 
 class ItemIcon(Widget):
 	#needs to avoid being placed on top of anything important
@@ -96,12 +133,7 @@ class ItemIcon(Widget):
 				if(key=='pos'): self.local_c=value
 		self.r=0
 		self.click=False
-	
-	def __del__(self):
-		try:
-			inuse.remove([self.local_c[0],self.local_c[1],self.r])
-		except ValueError:
-			pass
+		self.time=-1
 		
 	def makeicon(self,r):
 		self.r=r
@@ -119,17 +151,40 @@ class ItemIcon(Widget):
 		for group in [self.icon]:
 			self.canvas.add(group)	
 	
+	def now(self):
+		now=datetime.datetime.now()
+		return int(now.strftime("%M"))*60+int(now.strftime("%s"))
+	
 	def on_touch_down(self,touch):
 		if get_dis(self.local_c,touch.pos) < self.r:
 			self.click=True
+			self.time=self.now()
 			#test for click&drag
+			#test for connecting
 	
 	def on_touch_move(self,touch):
 		if self.click:
-			a=MovingIcon(pos=touch.pos)
-			a.makeicon(self.r)
-			self.parent.add_widget(a)#adds moving icon to screen
-			self.parent.remove_widget(self)
+			if self.time<0:
+				global inuse
+				try:
+					inuse.remove([self.local_c[0],self.local_c[1],self.r])
+				except ValueError:
+					pass
+				
+				a=MovingIcon(pos=touch.pos)
+				a.init(self.r)
+				self.parent.add_widget(a)#adds moving icon to screen
+				self.parent.remove_widget(self)
+			else:
+				time=self.now()
+				if self.time>time:
+					time+=3600
+				if time-self.time>0:
+					a=MovingConector()
+					a.init(self.local_c,self.r)
+					self.parent.add_widget(a)
+					self.click=False
+				self.time=-1
 
 class MovingIcon(Widget):
 	#folows cursor while held
@@ -148,7 +203,7 @@ class MovingIcon(Widget):
 	def makepoint(self,coords):
 		self.pointslist.append(coords)
 		
-	def makeicon(self,r):
+	def init(self,r):
 		self.l=listofshapes(r)
 		self.r=r
 		self.updateloc(self.local_c)
@@ -305,7 +360,7 @@ class MenuIcon(Widget):
 	def on_touch_down(self,touch):
 		if get_dis(self.local_c,touch.pos) < 40:
 			a=MovingIcon(pos=touch.pos)
-			a.makeicon(self.r*.8)
+			a.init(self.r*.8)
 			self.parent.add_widget(a)#adds moving icon to screen
 
 class MenuCircle(Widget):
