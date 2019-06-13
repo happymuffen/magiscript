@@ -12,33 +12,52 @@ from kivy.config import Config
 
 #add drawpercentage() to all visible classes for animating loading saves
 
-class point():#takes x,y and optional relative center
-	def __init__(self,x,y,pnt=None):
-		def car_to_pol(car,c):
-			#gets polar coords relative to center from cartisian [r,t]
-			dx=car[0]-c.x
-			#can't divide by 0
-			if dx==0:
-				dx=.0000000000000000001
-			#atan(x) only outputs +/-180
-			b=0
-			if dx<0:
-				b=180
-			pol= [get_dis([c.x,c.y],car), math.degrees(math.atan((car[1]-c.y)/dx))+b]
-			if pol[1]<0:
-				pol[1]+=360
-			return pol
+class point():
+	def __init__(self,a,b,pnt=None):#takes x and y or r,t, and pnt
 		global c
-		#default
-		self.x,self.y=x,y
-		if c==None:
-			self.r,self.t=0.0,0.0
-		else:
-			self.r,self.t=car_to_pol([x,y],c)
-		if pnt==None:
-			self.local_r,self.local_t= None,None
-		else:
-			self.local_r,self.local_t=car_to_pol([x,y],pnt)
+		if pnt==None:#takes x and y
+			self.x,self.y=a,b
+			if c==None:
+				self.r,self.t=0.0,0.0
+				self.local_r,self.local_t= None,None
+			else:
+				self.r,self.t=self.car_to_pol([a,b],c)
+				self.local_r,self.local_t= self.car_to_pol([self.x,self.y],c)
+				self.center=c
+		else:#takes r,t, and a relative center point
+			self.local_r,self.local_t= a,b
+			self.x,self.y=self.pol_to_car([a,b],pnt)
+			self.r,self.t=self.r,self.t=self.car_to_pol([self.x,self.y],c)
+			self.center=pnt
+	
+	def __str__(self):
+		return "Cartisian: %s\nPolar: %s" %([self.x,self.y],[self.local_r,self.local_t])
+		
+	def __eq__(self, other):
+		if not isinstance(other, point):
+			# don't attempt to compare against unrelated types
+			return NotImplemented
+		return self.x==other.x and self.y==other.y
+		
+	def car_to_pol(self,car,c):
+		#gets polar coords relative to center from cartisian [r,t]
+		dx=car[0]-c.x
+		#can't divide by 0
+		if dx==0:
+			dx=.0000000000000000001
+		#atan(x) only outputs +/-180
+		b=0
+		if dx<0:
+			b=180
+		pol= [get_dis([c.x,c.y],car), math.degrees(math.atan((car[1]-c.y)/dx))+b]
+		if pol[1]<0:
+			pol[1]+=360
+		return pol
+	
+	def pol_to_car(self,pol,c):
+		#gets cartisian coords to polar from center [x,y]
+		car= [pol[0]*math.cos(math.radians(pol[1]))+c.x, pol[0]*math.sin(math.radians(pol[1]))+c.y]
+		return car
 			
 	def coords(self): #returns [x,y]
 		return [self.x,self.y]
@@ -47,10 +66,14 @@ class point():#takes x,y and optional relative center
 	
 	def move_to(self,coords):
 		self.x,self.y=coords[0],coords[1]
-		
-	def __str__(self):
-		return "Cartisian: %s\nPolar: %s" %([self.x,self.y],[self.local_r,self.local_t])
-
+		global c
+		self.r,self.t=self.car_to_pol([self.x,self.y],c)
+		self.local_r,self.local_t= self.car_to_pol([self.x,self.y],self.center)
+	
+	def set_local(self,point):
+		self.center=point
+		self.local_r,self.local_t= self.car_to_pol([self.x,self.y],point)
+	
 class circle():#takes point and r
 	def __init__(self,c,r):
 		self.c,self.r=c,r
@@ -60,7 +83,7 @@ class circle():#takes point and r
 			
 c=None
 c=point(Window.center[0],Window.center[1])
-print(c)
+print(repr(c))
 ringi=110
 inuse=[]
 buf=(100+ringi)*math.pi/6
@@ -96,7 +119,7 @@ def listofshapes(r):
 	global buf
 	l=[]
 	for each in inuse:
-		l.append([each[0],each[1],r+buf+each[2]])
+		l.append([each.c.x,each.c.y,r+buf+each.r])
 	return l
 					
 def makepoint(coords,canvas):
@@ -127,20 +150,32 @@ class MovingConector(Widget):
 	def __init__(self, **kwargs):
 		super(MovingConector,self).__init__(**kwargs)
 		
-	def init(self,pnt1):
+	def init(self,pnt1,coords):
 		self.pnt1=pnt1
-		self.canvas.opacity=.2		
+		self.canvas.opacity=.2
+		pnt=point(coords[0],coords[1])
+		pnt=self.limitpos(pnt)
+		pnt.set_local(self.pnt1)
+		self.canvas.add(SmoothLine(circle=(self.pnt1.x,self.pnt1.y,33,120-pnt.local_t,60-pnt.local_t),width=3))
 		
 	def draw(self,path):
 		self.canvas.clear()
 		for group in [path]:
-			self.canvas.add(group)	
+			self.canvas.add(group)
+			
+	
 	
 	def on_touch_move(self,touch):
+		if self.pnt1==None: return
 		l=touch.pos
 		pnt=point(l[0],l[1])
 		pnt=self.limitpos(pnt)
-		path=self.makepath(pnt)
+		pnt.set_local(self.pnt1)
+		path=InstructionGroup()
+		if get_dis_pnt(self.pnt1,pnt)>35:
+			self.makepath(path,pnt)
+		
+		path.add(SmoothLine(circle=(self.pnt1.x,self.pnt1.y,33,120-pnt.local_t,60-pnt.local_t),width=3))
 		self.draw(path)
 	
 	def on_touch_up(self,touch):
@@ -153,11 +188,11 @@ class MovingConector(Widget):
 		#should find snap location for pnt
 		return pnt
 	
-	def makepath(self,pnt):
+	def makepath(self,todraw,pnt):
 		#returns InstructionGroup containing all relevent things to draw.
-		todraw=InstructionGroup()
 		pnt=self.limitpos(pnt)
-		todraw.add(SmoothLine(points=[self.pnt1.x,self.pnt1.y,pnt.x,pnt.y],cap='round', joint='round', width=3))
+		tmppnt=point(35.5,pnt.local_t,self.pnt1)
+		todraw.add(SmoothLine(points=[tmppnt.x,tmppnt.y,pnt.x,pnt.y],cap='round', joint='round', width=3))
 		return todraw
 			
 
@@ -179,7 +214,7 @@ class ItemIcon(Widget):
 	def makeicon(self,r):
 		self.cir.r=r
 		global inuse
-		inuse.append([self.cir.c.x,self.cir.c.y,self.cir.r])
+		inuse.append(self.cir)
 		
 		self.canvas.clear()
 		self.icon=InstructionGroup()
@@ -208,7 +243,7 @@ class ItemIcon(Widget):
 			if self.time<0:
 				global inuse
 				try:
-					inuse.remove([self.cir.c.x,self.cir.c.y,self.cir.r])
+					inuse.remove(self.cir)
 				except ValueError:
 					pass
 				
@@ -218,11 +253,11 @@ class ItemIcon(Widget):
 				self.parent.remove_widget(self)
 			else:
 				time=self.now()
-				if self.time>time:
+				if self.time>time:#edge case of hour ticks over
 					time+=3600
 				if time-self.time>0:
 					a=MovingConector()
-					a.init(self.cir.c)
+					a.init(self.cir.c,touch.pos)
 					self.parent.add_widget(a)
 					self.click=False
 				self.time=-1
@@ -289,7 +324,7 @@ class MovingIcon(Widget):
 			#if it isn't find whats blocking it and add it's farther intersection to the list
 		#jmp to checking if intersections are close enough	
 		
-		#snap if within 35
+		#snap if within 50
 		
 		#sort function for finding the shortest distance between coords
 		# ~ def sort_by_d(arr,pnt):
@@ -316,64 +351,36 @@ class MovingIcon(Widget):
 				# ~ pars=newpars
 			# ~ return arr
 		
-		# ~ ipol=pnt.polar()
-		# ~ pr=self.parent.cir.r
-		# ~ pc=self.parent.cir.c
-		# ~ max_d=40
-		# ~ global ringi
-		# ~ ringn=(ipol[0]-pr+(ringi/2))//ringi
-		# ~ newr=pr+(ringn*ringi)
-		# ~ if abs(newr-ipol[0])>max_d: return coords
-		# ~ if newr<=pr:return coords
-		# ~ newcoords=pol_to_car([newr,ipol[1]])
-		# ~ cir=self.isbad(newcoords)
-		# ~ if cir==[]: return newcoords
-		# ~ interlist=findcircleintersections(cir,[pc[0],pc[1],newr])
-		# ~ interlist=sort_by_d(interlist,coords)
-		# ~ tmp=[]
-		# ~ counter=0
-		# ~ while counter<5:
-			# ~ for each in interlist:
-				# ~ b=False
-				# ~ if get_dis(each,coords)<max_d:
-					# ~ test=self.isbad(each)
-					# ~ if test==[]:return each
-					# ~ tl=findcircleintersections(test,[pc[0],pc[1],newr])
-					# ~ for t in tl:
-						# ~ for i in interlist:
-							# ~ if t==i: b=True
-						# ~ if b:break
-						# ~ tmp.append(t)
-					# ~ #update tmp
-			# ~ if tmp==[]: break
-			# ~ interlist=sort_by_d(tmp,coords)
-			# ~ tmp=[]		
-			# ~ counter+=1
+		#preset locations
+		#spider patern
+		
+		pntcir=circle(pnt,50)
+		testr=(pnt.r+35)//100*100
+		if testr<150: return pnt
+		testpnt=point(testr,(pnt.t+22)//45*45,self.c)
+		testcir=circle(testpnt,1)
+		if (intersects(pntcir,testcir)!=0)&(testpnt.local_r>150):
+			#test if position is occupied
+			global inuse
+			for each in inuse:
+				if each.c==testpnt: return pnt
+			pnt=testpnt
 	
 		return pnt
 	
 	def on_touch_up(self,touch):
-		if self.isbad(self.cir.c)==[]:
+		if self.isgood(self.cir.c)==self.cir.c:
 			a=ItemIcon(pos=self.cir.c.coords())
 			a.makeicon(self.cir.r)
 			self.parent.add_widget(a)
 		self.parent.remove_widget(self)
 	
-	def isbad(self, pnt): #should return object blocking pnt, if any
-		# ~ global buf
-		# ~ r=get_dis_pnt(pnt,self.cir.c)
-		# ~ global ringi
-		# ~ ringn=(r-self.parent.cir.r+(ringi/2))//ringi
-		# ~ newr=self.parent.cir.r+(ringn*ringi)
-		# ~ if ringn==0: return [self.cir.c.x,self.cir.c.y,newr]
-		# ~ if abs(newr-r)>=10: return [self.cir.c.x,self.cir.c.y,newr]
-		# ~ for cir in self.l:
-			# ~ if (get_dis([cir[0],cir[1]],coords) < cir[2]-1):
-				# ~ cir_r=get_dis([cir[0],cir[1]],self.c)
-				# ~ if abs(cir_r-r)<10:
-					
-					# ~ return cir
-		return []
+	def isgood(self, pnt): #Returns pnt if pnt is good
+		if (pnt.r<150) or (pnt.local_r%100>0) or (pnt.local_t%45>0): return None
+		global inuse
+		for each in inuse:
+			if each.c==pnt: return None
+		return pnt
 	
 	def findfree(self,coords):
 		pass
