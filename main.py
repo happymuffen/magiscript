@@ -31,6 +31,11 @@ class point():
 			self.r,self.t=self.r,self.t=self.car_to_pol([self.x,self.y],c)
 			self.center=pnt
 	
+	def __cpy__(self):
+		out=point(self.x,self.y)
+		out.set_local(self.center)
+		return out
+	
 	def __str__(self):
 		return "Cartisian: %s\nPolar: %s" %([self.x,self.y],[self.local_r,self.local_t])
 		
@@ -70,10 +75,12 @@ class point():
 		global c
 		self.r,self.t=self.car_to_pol([self.x,self.y],c)
 		self.local_r,self.local_t= self.car_to_pol([self.x,self.y],self.center)
+		return self
 	
 	def set_local(self,point):
 		self.center=point
 		self.local_r,self.local_t= self.car_to_pol([self.x,self.y],point)
+		return self
 	
 class circle():#takes point and r
 	def __init__(self,c,r):
@@ -81,12 +88,20 @@ class circle():#takes point and r
 		
 	def move_to(self, pnt):
 		self.c=pnt
+		
+	def __cpy__(self):
+		return circle(self.c.__cpy__(),self.r)
+	
+	def __str__(self):
+		return "center: %s\nradius: %s"%(self.c,self.r)
 			
 c=None
 c=point(Window.center[0],Window.center[1])
-print(repr(c))
 ringi=110
 inuse=[]
+connectors=[]
+newmovingconectorin=None
+newconectorin=None
 buf=(100+ringi)*math.pi/6
 
 def get_dis(c1,c2):
@@ -113,6 +128,10 @@ def findcircleintersections(cir0,cir1):
 	h=math.sqrt(cir0[2]**2-a**2)
 	out= [[a*ux-h*uy+cir0[0],a*uy+h*ux+cir0[1]],[a*ux+h*uy+cir0[0],a*uy-h*ux+cir0[1]]]
 	return out
+	
+def radialintersection(pnt,cir):#returns point where a line from pnt to cir.c intersects cir
+	intr=point(cir.r,pnt.set_local(cir.c).local_t,cir.c)
+	return intr
 
 def listofshapes(r):
 	
@@ -143,24 +162,38 @@ class SelectionWindow(Widget):
 	pass
 	
 class Conector(Widget):
-	pass
+	def __init__(self, **kwargs):
+		super(Conector,self).__init__(**kwargs)
+
+		global newconector
+		self.start=newconectorin[0]
+		self.end=newconectorin[1]
+		self.sl=self.start.__cpy__()
+		self.sl.c.set_local(self.end.c)
+		self.canvas.add(Color(.5,.5,.5))
+		self.canvas.add(SmoothLine(circle=(self.start.c.x,self.start.c.y,self.start.r+7,315-self.sl.c.local_t,225-self.sl.c.local_t),width=2))
+		self.canvas.add(SmoothLine(circle=(self.end.c.x,self.end.c.y,self.end.r+12,115-self.sl.c.local_t,65-self.sl.c.local_t),width=1.5))
+		a=radialintersection(self.start.c,circle(self.end.c,self.end.r+12))
+		b=radialintersection(self.end.c,circle(self.start.c,self.start.r+7))
+		self.canvas.add(SmoothLine(points=[a.x,a.y,b.x,b.y],cap='round', joint='round', width=2))
 
 class MovingConector(Widget):
 	#needs to be able to path around items it isn't connected to
 	#needs to handle overlap
 	def __init__(self, **kwargs):
 		super(MovingConector,self).__init__(**kwargs)
-		
-	def init(self,pnt1,coords):
-		self.pnt1=pnt1
+		global newmovingconectorin
+		self.cir1=newmovingconectorin[0]
+		coords=newmovingconectorin[1]
 		global inuse
 		self.snaps= inuse
 		
 		self.canvas.opacity=.2
-		pnt=point(coords[0],coords[1])
-		pnt=self.limitpos(pnt)
-		pnt.set_local(self.pnt1)
-		self.canvas.add(SmoothLine(circle=(self.pnt1.x,self.pnt1.y,33,120-pnt.local_t,60-pnt.local_t),width=3))
+		cir=circle(point(coords[0],coords[1]),10)
+		cir=self.limitpos(cir)
+		cir.c.set_local(self.cir1.c)
+		self.canvas.add(SmoothLine(circle=(self.cir1.c.x,self.cir1.c.y,self.cir1.r+7,315-cir.c.local_t,225-cir.c.local_t),width=2))
+		
 		
 	def draw(self,path):
 		self.canvas.clear()
@@ -170,40 +203,49 @@ class MovingConector(Widget):
 	
 	
 	def on_touch_move(self,touch):
-		if self.pnt1==None: return
+		if self.cir1==None: return
 		l=touch.pos
-		pnt=point(l[0],l[1])
-		pnt=self.limitpos(pnt)
-		pnt.set_local(self.pnt1)
+		cir=circle(point(l[0],l[1]),5)
+		cir=self.limitpos(cir)
+		cir.c.set_local(self.cir1.c)
 		path=InstructionGroup()
-		if get_dis_pnt(self.pnt1,pnt)>35:
-			self.makepath(path,pnt)
+		if get_dis_pnt(self.cir1.c,cir.c)>35:
+			self.makepath(path,cir)
 		
-		path.add(SmoothLine(circle=(self.pnt1.x,self.pnt1.y,33,120-pnt.local_t,60-pnt.local_t),width=3))
+		path.add(SmoothLine(circle=(self.cir1.c.x,self.cir1.c.y,self.cir1.r+8,135-cir.c.local_t,45-cir.c.local_t),width=2))
 		self.draw(path)
 	
 	def on_touch_up(self,touch):
-		
+		test=self.limitpos(circle(point(touch.pos[0],touch.pos[1]),35))
+		if touch.pos!=tuple([test.c.x,test.c.y]):
+			global newconectorin
+			newconectorin=[self.cir1,self.cir2]
+			a=Conector()
+			self.parent.add_widget(a)
+			
 		self.parent.remove_widget(self)
 	
 	
 	
-	def limitpos(self,pnt):
+	def limitpos(self,cir):
 		#should find snap location for pnt
-		if get_dis_pnt(pnt,self.pnt1)<50: return pnt
-		
-		test=circle(pnt,20)
+		if get_dis_pnt(cir.c,self.cir1.c)<50: return cir
+		test=circle(cir.c,35)
 		for each in self.snaps:
 			if intersects(test,each)!=0:
-				pnt=each.c
+				self.cir2=each
+				cir=circle(each.c,each.r+7)
 				break
-		return pnt
+		return cir
 	
-	def makepath(self,todraw,pnt):
+	def makepath(self,todraw,cir):
 		#returns InstructionGroup containing all relevent things to draw.
-		pnt=self.limitpos(pnt)
-		tmppnt=point(35.5,pnt.local_t,self.pnt1)
-		todraw.add(SmoothLine(points=[tmppnt.x,tmppnt.y,pnt.x,pnt.y],cap='round', joint='round', width=3))
+		
+		p1=radialintersection(cir.c,circle(self.cir1.c,self.cir1.r+8))
+		p2=radialintersection(self.cir1.c,circle(cir.c,cir.r+5))
+		if get_dis_pnt(self.cir1.c,p2)<get_dis_pnt(self.cir1.c,p1):p2=p1
+		todraw.add(SmoothLine(points=[p1.x,p1.y,p2.x,p2.y],cap='round', joint='round', width=2))
+		todraw.add(SmoothLine(circle=(cir.c.x,cir.c.y,cir.r+5,295-cir.c.local_t,245-cir.c.local_t),width=1.5))
 		return todraw
 			
 
@@ -237,23 +279,20 @@ class ItemIcon(Widget):
 		self.icon.add(SmoothLine(circle=(self.cir.c.x,self.cir.c.y,self.cir.r),width=3))
 		for group in [self.icon]:
 			self.canvas.add(group)	
-	
-	def now(self):
-		now=datetime.datetime.now()
-		return int(now.strftime("%M"))*60+int(now.strftime("%s"))
+
 		
 	def wait(self,dt):
-			a=MovingConector()
-			a.init(self.cir.c,self.touch.pos)
-			self.parent.add_widget(a)
-			self.click=False
+		global newmovingconectorin
+		newmovingconectorin=[self.cir,self.touch.pos]
+		a=MovingConector()
+		self.parent.add_widget(a)
+		self.click=False
 	
 	def on_touch_down(self,touch):
 		if get_dis(self.cir.c.coords(),touch.pos) < self.cir.r:
 			self.click=True
-			self.time=self.now()
 			self.touch=touch
-			self.event=Clock.schedule_once(self.wait,.5)
+			self.event=Clock.schedule_once(self.wait,.15)
 			#test for click&drag
 			#test for connecting
 	
