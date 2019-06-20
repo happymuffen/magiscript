@@ -7,8 +7,9 @@ from kivy.properties import NumericProperty, ReferenceListProperty,\
 from kivy.core.window import Window
 from kivy.graphics import Color, Ellipse, SmoothLine, Rectangle
 from kivy.graphics.instructions import Instruction, InstructionGroup
-import math, random, datetime
+import math, random, datetime,time
 from kivy.config import Config
+from kivy.clock import Clock
 
 #add drawpercentage() to all visible classes for animating loading saves
 
@@ -152,6 +153,9 @@ class MovingConector(Widget):
 		
 	def init(self,pnt1,coords):
 		self.pnt1=pnt1
+		global inuse
+		self.snaps= inuse
+		
 		self.canvas.opacity=.2
 		pnt=point(coords[0],coords[1])
 		pnt=self.limitpos(pnt)
@@ -186,6 +190,13 @@ class MovingConector(Widget):
 	
 	def limitpos(self,pnt):
 		#should find snap location for pnt
+		if get_dis_pnt(pnt,self.pnt1)<50: return pnt
+		
+		test=circle(pnt,20)
+		for each in self.snaps:
+			if intersects(test,each)!=0:
+				pnt=each.c
+				break
 		return pnt
 	
 	def makepath(self,todraw,pnt):
@@ -230,37 +241,35 @@ class ItemIcon(Widget):
 	def now(self):
 		now=datetime.datetime.now()
 		return int(now.strftime("%M"))*60+int(now.strftime("%s"))
+		
+	def wait(self,dt):
+			a=MovingConector()
+			a.init(self.cir.c,self.touch.pos)
+			self.parent.add_widget(a)
+			self.click=False
 	
 	def on_touch_down(self,touch):
 		if get_dis(self.cir.c.coords(),touch.pos) < self.cir.r:
 			self.click=True
 			self.time=self.now()
+			self.touch=touch
+			self.event=Clock.schedule_once(self.wait,.5)
 			#test for click&drag
 			#test for connecting
 	
 	def on_touch_move(self,touch):
 		if self.click:
-			if self.time<0:
-				global inuse
-				try:
-					inuse.remove(self.cir)
-				except ValueError:
-					pass
-				
-				a=MovingIcon(pos=touch.pos)
-				a.init(self.cir.r)
-				self.parent.add_widget(a)#adds moving icon to screen
-				self.parent.remove_widget(self)
-			else:
-				time=self.now()
-				if self.time>time:#edge case of hour ticks over
-					time+=3600
-				if time-self.time>0:
-					a=MovingConector()
-					a.init(self.cir.c,touch.pos)
-					self.parent.add_widget(a)
-					self.click=False
-				self.time=-1
+			self.event.cancel()
+			global inuse
+			try:
+				inuse.remove(self.cir)
+			except ValueError:
+				pass
+			
+			a=MovingIcon(pos=touch.pos)
+			a.init(self.cir.r)
+			self.parent.add_widget(a)#adds moving icon to screen
+			self.parent.remove_widget(self)
 
 class MovingIcon(Widget):
 	#folows cursor while held
