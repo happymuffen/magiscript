@@ -82,6 +82,9 @@ class point():
 		self.local_r,self.local_t= self.car_to_pol([self.x,self.y],point)
 		return self
 	
+	def draw(self,canvas):
+		canvas.add(SmoothLine(circle=(self.x,self.y,5),width=1))	
+		
 class circle():#takes point and r
 	def __init__(self,c,r):
 		self.c,self.r=c,r
@@ -94,6 +97,45 @@ class circle():#takes point and r
 	
 	def __str__(self):
 		return "center: %s\nradius: %s"%(self.c,self.r)
+	
+	def draw(self,canvas,offset=0,width=3):
+		canvas.add(SmoothLine(
+		circle=(self.c.x,self.c.y,self.r+offset),
+		width=width))
+	
+	def draw_bg(self,canvas):
+		canvas.add(Ellipse(
+		size=(2*self.r,2*self.r),
+		pos=(self.c.x-self.r,self.c.y-self.r)))
+
+class line():#takes two points
+	def __init__(self,a,b):
+		self.a,self.b=a,b
+		self.len=get_dis_pnt(a,b)
+		dx=b.x-a.x
+		if dx==0:
+			dx=.0000000000000000001
+		n=0
+		if dx<0:
+			n=180
+		angle=math.degrees(math.atan((b.y-a.y)/dx))+n
+		if angle<0:
+			angle+=360
+		self.angle=angle
+	
+	def draw(self, canvas, width=2):
+		canvas.add(SmoothLine(points=[self.a.x,self.a.y,self.b.x,self.b.y],cap='round', joint='round', width=width))
+		
+class arc():#takes circle and two angles
+	def __init__(self,cir,r_offset,a1,a2):
+		self.cir=cir.__cpy__()
+		self.a1,self.a2=a1,a2
+		self.off=r_offset
+	
+	def draw(self,canvas,width=2):
+		canvas.add(SmoothLine(
+		circle=(self.cir.c.x,self.cir.c.y,self.cir.r+self.off,self.a1,self.a2),
+		width=width))
 			
 c=None
 c=point(Window.center[0],Window.center[1])
@@ -102,6 +144,7 @@ inuse=[]
 connectors=[]
 newmovingconectorin=None
 newconectorin=None
+moving_icon=False
 buf=(100+ringi)*math.pi/6
 
 def get_dis(c1,c2):
@@ -142,11 +185,6 @@ def listofshapes(r):
 		l.append([each.c.x,each.c.y,r+buf+each.r])
 	return l
 					
-def makepoint(coords,canvas):
-	canvas.add(Color(1,0,0))
-	canvas.add(SmoothLine(circle=(coords[0],coords[1],2),width=3))
-	
-	
 def intersects(cir0,cir1):
 	#tests for intersections in two circles quickly
 	d=get_dis_pnt(cir0.c,cir1.c)
@@ -170,6 +208,10 @@ class Conector(Widget):
 		self.end=newconectorin[1]
 		self.sl=self.start.__cpy__()
 		self.sl.c.set_local(self.end.c)
+		
+		self.frill_start=arc(self.start,7,315-self.sl.c.local_t,225-self.sl.c.local_t)
+		self.frill_end=arc(self.end,12,115-self.sl.c.local_t,65-self.sl.c.local_t)
+		
 		self.canvas.add(Color(.5,.5,.5))
 		self.canvas.add(SmoothLine(circle=(self.start.c.x,self.start.c.y,self.start.r+7,315-self.sl.c.local_t,225-self.sl.c.local_t),width=2))
 		self.canvas.add(SmoothLine(circle=(self.end.c.x,self.end.c.y,self.end.r+12,115-self.sl.c.local_t,65-self.sl.c.local_t),width=1.5))
@@ -187,15 +229,17 @@ class MovingConector(Widget):
 		coords=newmovingconectorin[1]
 		global inuse
 		self.snaps= inuse
+		global moving_icon
+		self.moving_icon=moving_icon
 		
 		self.canvas.opacity=.2
 		cir=circle(point(coords[0],coords[1]),10)
 		cir=self.limitpos(cir)
 		cir.c.set_local(self.cir1.c)
-		self.canvas.add(SmoothLine(circle=(self.cir1.c.x,self.cir1.c.y,self.cir1.r+7,315-cir.c.local_t,225-cir.c.local_t),width=2))
+		frill=arc(self.cir1,7,135-cir.c.local_t,45-cir.c.local_t)
+		frill.draw(self.canvas)
 		
-		
-	def draw(self,path):
+	def make(self,path):
 		self.canvas.clear()
 		for group in [path]:
 			self.canvas.add(group)
@@ -203,6 +247,7 @@ class MovingConector(Widget):
 	
 	
 	def on_touch_move(self,touch):
+		self.canvas.clear()
 		if self.cir1==None: return
 		l=touch.pos
 		cir=circle(point(l[0],l[1]),5)
@@ -212,8 +257,9 @@ class MovingConector(Widget):
 		if get_dis_pnt(self.cir1.c,cir.c)>35:
 			self.makepath(path,cir)
 		
-		path.add(SmoothLine(circle=(self.cir1.c.x,self.cir1.c.y,self.cir1.r+8,135-cir.c.local_t,45-cir.c.local_t),width=2))
-		self.draw(path)
+		frill_s=arc(self.cir1,8,135-cir.c.local_t,45-cir.c.local_t)
+		frill_s.draw(path)
+		self.make(path)
 	
 	def on_touch_up(self,touch):
 		test=self.limitpos(circle(point(touch.pos[0],touch.pos[1]),35))
@@ -224,8 +270,6 @@ class MovingConector(Widget):
 			self.parent.add_widget(a)
 			
 		self.parent.remove_widget(self)
-	
-	
 	
 	def limitpos(self,cir):
 		#should find snap location for pnt
@@ -243,10 +287,17 @@ class MovingConector(Widget):
 		
 		p1=radialintersection(cir.c,circle(self.cir1.c,self.cir1.r+8))
 		p2=radialintersection(self.cir1.c,circle(cir.c,cir.r+5))
-		if get_dis_pnt(self.cir1.c,p2)<get_dis_pnt(self.cir1.c,p1):p2=p1
-		todraw.add(SmoothLine(points=[p1.x,p1.y,p2.x,p2.y],cap='round', joint='round', width=2))
-		todraw.add(SmoothLine(circle=(cir.c.x,cir.c.y,cir.r+5,295-cir.c.local_t,245-cir.c.local_t),width=1.5))
+		l=line(p1,p2)
+		if get_dis_pnt(self.cir1.c,p2)<get_dis_pnt(self.cir1.c,p1):l.b=l.a
+		l.draw(todraw)
+		# ~ if self.moving_icon:
+		frill_e=arc(cir,5,295-cir.c.local_t,245-cir.c.local_t)
+		frill_e.draw(todraw)
 		return todraw
+		# ~ todraw.add(SmoothLine(points=[p1.x,p1.y,p2.x,p2.y],cap='round', joint='round', width=2))
+		# ~ todraw.add(SmoothLine(circle=(cir.c.x,cir.c.y,cir.r+5,295-cir.c.local_t,245-cir.c.local_t),width=1.5))
+		# ~ cir.draw(todraw)
+		# ~ return todraw
 			
 
 class ItemIcon(Widget):
@@ -270,16 +321,12 @@ class ItemIcon(Widget):
 		inuse.append(self.cir)
 		
 		self.canvas.clear()
-		self.icon=InstructionGroup()
-		self.icon.add(Color(.3,.3,.3))
-		self.icon.add(Color(1,1,1))
-		self.icon.add(Ellipse(size=(2*self.cir.r,2*self.cir.r),pos=(self.cir.c.x-self.cir.r,self.cir.c.y-self.cir.r)))
-		self.icon.add(SmoothLine(circle=(self.cir.c.x,self.cir.c.y,self.cir.r+4),width=3))
-		self.icon.add(Color(.3,.3,.3))
-		self.icon.add(SmoothLine(circle=(self.cir.c.x,self.cir.c.y,self.cir.r),width=3))
-		for group in [self.icon]:
-			self.canvas.add(group)	
-
+		self.canvas.add(Color(.3,.3,.3))
+		self.canvas.add(Color(1,1,1))
+		self.cir.draw_bg(self.canvas)
+		self.cir.draw(self.canvas,4)
+		self.canvas.add(Color(.3,.3,.3))
+		self.cir.draw(self.canvas)
 		
 	def wait(self,dt):
 		global newmovingconectorin
@@ -325,8 +372,8 @@ class MovingIcon(Widget):
 				if(key=='pos'): local_c=point(value[0],value[1])
 		self.cir=circle(local_c,24)
 	
-	def makepoint(self,coords):
-		self.pointslist.append(coords)
+	def makepoint(self,pnt):
+		self.pointslist.append(pnt)
 		
 	def init(self,r):
 		self.l=listofshapes(r)
@@ -336,22 +383,20 @@ class MovingIcon(Widget):
 	def updateloc(self, coords):
 		self.cir.move_to(coords)
 		self.canvas.clear()
-		self.icon=InstructionGroup()
 		self.canvas.opacity=.2		
-		self.icon.add(Color(1,1,1))
-		self.icon.add(Ellipse(size=(2*self.cir.r,2*self.cir.r),pos=(self.cir.c.x-self.cir.r,self.cir.c.y-self.cir.r)))
-		self.icon.add(SmoothLine(circle=(self.cir.c.x,self.cir.c.y,self.cir.r+4),width=3))
-		self.icon.add(Color(.3,.3,.3))
-		self.icon.add(SmoothLine(circle=(self.cir.c.x,self.cir.c.y,self.cir.r),width=3))
-		for group in [self.icon]:
-			self.canvas.add(group)
+		self.canvas.add(Color(1,1,1))
+		# ~ self.cir.draw_bg(self.canvas)
+		# ~ self.cir.draw(self.canvas,4)
+		self.canvas.add(Color(.3,.3,.3))
+		self.cir.draw(self.canvas)
 		
 		#handles makepoint
 		if len(self.pointslist)>0:
 			self.canvas.add(Color(.1,.1,.1))
 			for each in self.pointslist:
-				self.canvas.add(SmoothLine(circle=(each.x,each.y,5),width=1))
+				each.draw(self.canvas)
 			self.pointslist=[]
+		
 			
 	def on_touch_move(self, touch):
 		pnt=point(touch.pos[0],touch.pos[1])
@@ -445,15 +490,13 @@ class MenuIcon(Widget):
 		c=point(local_c[0],local_c[1])
 		self.cir=circle(c,30)
 		
-		self.icon=InstructionGroup()
-		self.icon.add(Color(1,1,1))
-		self.icon.add(Ellipse(size=(2*self.cir.r,2*self.cir.r),pos=(c.x-self.cir.r,c.y-self.cir.r)))
-		self.icon.add(SmoothLine(circle=(c.x,c.y,self.cir.r+4),width=3))
-		self.icon.add(Color(.3,.3,.3))
-		self.icon.add(SmoothLine(circle=(c.x,c.y,self.cir.r),width=3))
-		for group in [self.icon]:
-			self.canvas.add(group)
-			
+		self.canvas.add(Color(1,1,1))
+		
+		self.cir.draw_bg(self.canvas)
+		self.cir.draw(self.canvas,4)
+		self.canvas.add(Color(.3,.3,.3))
+		self.cir.draw(self.canvas)
+				
 	def options(self):
 		pass
 	
@@ -475,7 +518,8 @@ class MenuCircle(Widget):
 		options=["start_node", "time", "variables","flow control","network","I/O","Sound/Notifications", "Interface"]
 		with self.canvas:
 			Color(.3,.3,.3)
-			SmoothLine(circle=(c.x,c.y,r),width=3)
+			# ~ SmoothLine(circle=(c.x,c.y,r),width=3)
+		self.cir.draw(self.canvas)
 		mi=MenuIcon(pos=[self.cir.c.x,self.cir.c.y+r])
 		self.add_widget(mi)
 
